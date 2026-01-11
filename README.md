@@ -10,6 +10,8 @@
 
 ### What has been implemented
 
+<img width="8191" height="993" alt="mermaid-ai-diagram-2026-01-11-165116" src="https://github.com/user-attachments/assets/3510725d-0bc7-436e-ad59-9b0d20db5f69" />
+
 A complete **serverless, event-driven ingestion pipeline** has been implemented on **Google Cloud Platform**, with infrastructure managed via **Terraform**.
 
 The following components are provisioned and in active use:
