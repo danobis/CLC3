@@ -76,11 +76,26 @@ Firestore documents include:
 
 ---
 
+### Reliability: Dead-Letter Queue (DLQ)
+
+The worker subscription is configured with a dead-letter topic (`events-dlq`).
+Messages that fail processing repeatedly (max 5 delivery attempts) are automatically routed to the DLQ for inspection and replay.
+
+
+### Reliability: Idempotent Processing
+
+The worker service implements idempotent processing based on `eventId`.
+If a message is redelivered by Pub/Sub, the worker detects that the event
+was already processed and safely skips duplicate writes.
+
+This ensures correct behavior under retries and at-least-once delivery.
+
+---
+
 ### What can be done next
 
 - Extend event validation or schema enforcement
 - Add monitoring and alerting (Cloud Logging / Metrics)
-- Introduce retry or dead-letter handling
 - Add authentication to the ingestion endpoint
 - Expand worker logic for additional processing steps
 

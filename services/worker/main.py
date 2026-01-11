@@ -54,21 +54,28 @@ async def handle_pubsub(request: Request):
         body = await request.json()
         event = _decode_pubsub_message(body)
     except Exception as e:
-        # returning non-2xx causes Pub/Sub to retry.
         raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {e}")
 
-    # minimal “processing”: stamp processedAt + write to Firestore.
+    # TEMPORARY (DLQ demo): force failure for specific eventType
+    if event.get("eventType") == "fail":
+        raise HTTPException(status_code=500, detail="Intentional failure for DLQ demo")
+
     event_id = event.get("eventId") or event.get("_pubsub", {}).get("messageId")
     if not event_id:
         raise HTTPException(status_code=400, detail="Missing eventId")
 
+    # idempotency check
+    doc_ref = db.collection(FIRESTORE_COLLECTION).document(str(event_id))
+    if doc_ref.get().exists:
+        return {"ok": True, "storedAs": event_id, "status": "duplicate"}
+
     event["processedAt"] = int(time.time())
 
     try:
-        db.collection(FIRESTORE_COLLECTION).document(str(event_id)).set(event)
+        doc_ref.set(event)
     except Exception as e:
-        # non-2xx => Pub/Sub retry
         raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
 
-    # 2xx => acknowledge
     return {"ok": True, "storedAs": event_id}
+
+
