@@ -81,6 +81,7 @@ Firestore documents include:
 The worker subscription is configured with a dead-letter topic (`events-dlq`).
 Messages that fail processing repeatedly (max 5 delivery attempts) are automatically routed to the DLQ for inspection and replay.
 
+For demonstration purposes, events with `eventType="fail"` intentionally trigger processing failures to showcase retry and dead-letter handling.
 
 ### Reliability: Idempotent Processing
 
