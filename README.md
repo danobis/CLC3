@@ -45,6 +45,32 @@ The system has been tested end-to-end and is fully functional.
 
 ---
 
+### Dashboard UI (Visualization & Demo)
+
+A lightweight **Dashboard UI** is deployed as an additional Cloud Run service to visualize and demonstrate the system end-to-end.
+
+**Purpose:**
+- Provide a clear, human-readable view of the system state
+- Support live demos without using the GCP Console
+- Make the event-driven architecture tangible
+
+**Features:**
+- Displays the latest events stored in Firestore (`events` collection)
+- Shows event metadata (eventId, type, timestamps, payload)
+- Allows publishing test events via the ingestion service
+- Includes a dedicated button to publish a failing event (`eventType="fail"`) to demonstrate retries and dead-letter handling
+- Optionally embeds the architecture diagram for reference
+
+**Architecture role:**
+- Implemented as a separate Cloud Run service (`dashboard-ui`)
+- Reads Firestore data using a read-only service account
+- Publishes test events by calling the public ingestion endpoint
+- Does not participate in the core data pipeline
+
+The dashboard is intended for demonstration and inspection purposes only and does not affect production data flow.
+
+---
+
 ### Shared facts (stable baseline)
 
 The following values are considered **fixed** and should not be changed without coordination:

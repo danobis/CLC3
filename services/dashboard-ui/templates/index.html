@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CLC3 Dashboard</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      .row { display: flex; gap: 24px; align-items: flex-start; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; width: 100%; }
+      h1 { margin: 0 0 12px 0; }
+      h2 { margin: 0 0 12px 0; font-size: 18px; }
+      label { display: block; font-size: 12px; color: #444; margin-top: 10px; }
+      input, textarea, button { width: 100%; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid #ccc; }
+      button { cursor: pointer; border: 1px solid #999; background: #f7f7f7; }
+      button:hover { background: #eee; }
+      .btnrow { display:flex; gap:10px; }
+      .btnrow button { width: 50%; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px solid #eee; padding: 10px; vertical-align: top; font-size: 13px; }
+      th { text-align: left; color: #333; }
+      .muted { color: #666; font-size: 12px; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #ddd; font-size: 12px; }
+      .ok { background: #f2fff2; }
+      .fail { background: #fff2f2; }
+      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+      img { max-width: 100%; border: 1px solid #eee; border-radius: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>CLC3 Dashboard</h1>
+    <div class="muted">
+      Project: <code>{{ project_id }}</code> • Region: <code>{{ region }}</code> • Firestore: <code>{{ collection }}</code> • Ingestion: <code>{{ ingestion_url }}</code>
+    </div>
+
+    <div class="row" style="margin-top:18px;">
+      <div class="card" style="max-width: 420px;">
+        <h2>Publish Test Event</h2>
+
+        <label>eventType</label>
+        <input id="eventType" value="demo.created" />
+
+        <label>source</label>
+        <input id="source" value="dashboard-ui" />
+
+        <label>payload (JSON)</label>
+        <textarea id="payload" rows="6">{ "hello": "world" }</textarea>
+
+        <div class="btnrow" style="margin-top:12px;">
+          <button onclick="publish(false)">Send normal</button>
+          <button onclick="publish(true)">Send fail (DLQ demo)</button>
+        </div>
+
+        <div id="publishResult" class="muted" style="margin-top:10px;"></div>
+
+        <hr style="margin:16px 0; border:none; border-top:1px solid #eee;" />
+        <h2>Architecture</h2>
+        <div class="muted">Optional: add your diagram as <code>static/architecture.png</code></div>
+        <div style="margin-top:10px;">
+          <img src="/static/architecture.png" alt="Architecture diagram (optional)" onerror="this.style.display='none';" />
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Latest Events (Firestore)</h2>
+        <div class="muted">Auto-refresh every 5 seconds</div>
+
+        <table style="margin-top:12px;">
+          <thead>
+            <tr>
+              <th>docId / eventId</th>
+              <th>type</th>
+              <th>source</th>
+              <th>timestamps</th>
+              <th>payload</th>
+            </tr>
+          </thead>
+          <tbody id="eventsBody">
+            <tr><td colspan="5" class="muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      async function fetchEvents() {
+        const res = await fetch("/api/events?limit=20");
+        const data = await res.json();
+        const tbody = document.getElementById("eventsBody");
+        tbody.innerHTML = "";
+
+        const events = data.events || [];
+        if (events.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">No events yet.</td></tr>`;
+          return;
+        }
+
+        for (const e of events) {
+          const id = e.eventId || e._docId || "(unknown)";
+          const typ = e.eventType || "";
+          const src = e.source || "";
+          const ing = e.ingestedAt ? new Date(e.ingestedAt * 1000).toISOString() : "";
+          const proc = e.processedAt ? new Date(e.processedAt * 1000).toISOString() : "";
+          const payload = e.payload || {};
+
+          const status = (typ === "fail") ? "fail" : "ok";
+          const statusLabel = (typ === "fail") ? "DLQ-demo" : "ok";
+
+          tbody.insertAdjacentHTML("beforeend", `
+            <tr>
+              <td>
+                <div><code>${id}</code></div>
+                <div class="pill ${status}" style="margin-top:6px;">${statusLabel}</div>
+              </td>
+              <td>${typ}</td>
+              <td>${src}</td>
+              <td>
+                <div><span class="muted">ingested:</span> ${ing}</div>
+                <div><span class="muted">processed:</span> ${proc}</div>
+              </td>
+              <td><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></td>
+            </tr>
+          `);
+        }
+      }
+
+      function escapeHtml(str) {
+        return str.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+      }
+
+      async function publish(fail) {
+        const eventType = fail ? "fail" : document.getElementById("eventType").value.trim();
+        const source = document.getElementById("source").value.trim() || "dashboard-ui";
+        const payload = document.getElementById("payload").value;
+
+        const res = await fetch("/api/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType, source, payload })
+        });
+
+        const out = await res.json().catch(() => ({}));
+        document.getElementById("publishResult").textContent =
+          `Publish result: HTTP ${res.status} • ${JSON.stringify(out)}`;
+
+        // refresh events shortly after publishing
+        setTimeout(fetchEvents, 1000);
+      }
+
+      fetchEvents();
+      setInterval(fetchEvents, 5000);
+    </script>
+  </body>
+</html>
