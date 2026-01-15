@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from typing import Any, Dict, List
 
 import requests
@@ -7,11 +8,20 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from google.cloud import firestore
+from google.cloud import firestore, pubsub_v1
 
 PROJECT_ID = os.getenv("PROJECT_ID")
 FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
 INGESTION_URL = os.getenv("INGESTION_URL")  # e.g. https://ingestion-api-...run.app
+
+TOPIC_NAME = os.getenv("TOPIC_NAME", "events-ingestion")
+DLQ_SUBSCRIPTION = os.getenv("DLQ_SUBSCRIPTION", "events-dlq-sub")
+
+publisher = pubsub_v1.PublisherClient()
+subscriber = pubsub_v1.SubscriberClient()
+
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
+dlq_sub_path = subscriber.subscription_path(PROJECT_ID, DLQ_SUBSCRIPTION)
 
 if not PROJECT_ID:
     raise RuntimeError("PROJECT_ID env var is required")
@@ -23,7 +33,7 @@ db = firestore.Client(project=PROJECT_ID)
 app = FastAPI(title="CLC3 Dashboard UI", version="1.0.0")
 templates = Jinja2Templates(directory="templates")
 
-# Static files (optional for architecture diagram)
+# static files
 if os.path.isdir("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -45,7 +55,7 @@ def _fetch_latest_events(limit: int = 20) -> List[Dict[str, Any]]:
             .stream()
         )
     except Exception:
-        # Fallback: no ordering (works even if processedAt missing on some docs)
+        # fallback: no ordering (works even if processedAt missing on some docs)
         docs = db.collection(FIRESTORE_COLLECTION).limit(limit).stream()
 
     out: List[Dict[str, Any]] = []
@@ -104,5 +114,84 @@ async def api_publish(request: Request):
     # pass through response for debugging
     return JSONResponse(
         status_code=resp.status_code,
-        content={"status_code": resp.status_code, "response": resp.json() if resp.content else {}},
+        content={
+            "status_code": resp.status_code,
+            "response": resp.json() if resp.content else {},
+        },
     )
+
+
+def _decode_pubsub_data(
+    msg: pubsub_v1.subscriber.message.Message,
+) -> Dict[str, Any]:
+    data = msg.message.data.decode("utf-8")
+    try:
+        return json.loads(data)
+    except Exception:
+        return {"raw": data}
+
+
+@app.get("/api/dlq/pull")
+def dlq_pull(limit: int = 10):
+    resp = subscriber.pull(
+        request={"subscription": dlq_sub_path, "max_messages": limit}
+    )
+
+    out = []
+    for rm in resp.received_messages:
+        m = rm.message
+        out.append(
+            {
+                "ackId": rm.ack_id,
+                "messageId": m.message_id,
+                "publishTime": m.publish_time.isoformat()
+                if m.publish_time
+                else None,
+                "attributes": dict(m.attributes),
+                "data": _decode_pubsub_data(rm),
+            }
+        )
+
+    # sort newest first (publishTime desc)
+    out.sort(
+        key=lambda x: x["publishTime"] or "",
+        reverse=True,
+    )
+
+    return {"messages": out}
+
+
+@app.post("/api/dlq/replay")
+async def dlq_replay(request: Request):
+    body = await request.json()
+    ack_id = body.get("ackId")
+    data = body.get("data")
+
+    if not ack_id or not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="ackId and data required")
+
+    # data is the original event envelope from ingestion
+    event_id = data.get("eventId")
+    event_type = data.get("eventType")
+
+    if not event_id or not event_type:
+        raise HTTPException(
+            status_code=400,
+            detail="DLQ message missing eventId/eventType",
+        )
+
+    # publish same event back to main topic (preserve eventId!)
+    payload_bytes = json.dumps(data).encode("utf-8")
+    publisher.publish(
+        topic_path,
+        data=payload_bytes,
+        eventType=event_type,
+        eventId=str(event_id),
+    ).result(timeout=10)
+
+    # ack the DLQ message so it doesn't show up again
+    subscriber.acknowledge(
+        request={"subscription": dlq_sub_path, "ack_ids": [ack_id]}
+    )
+
+    return {"ok": True, "replayedEventId": event_id}

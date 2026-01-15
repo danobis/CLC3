@@ -55,10 +55,15 @@
         <div id="publishResult" class="muted" style="margin-top:10px;"></div>
 
         <hr style="margin:16px 0; border:none; border-top:1px solid #eee;" />
-        <h2>Architecture</h2>
-        <div style="margin-top:10px;">
-          <img src="/static/architecture.png" alt="Architecture diagram (optional)" onerror="this.style.display='none';" />
+        <h2>Dead-Letter Queue (DLQ)</h2>
+        <div class="muted">Pull messages from <code>events-dlq-sub</code> and replay them.</div>
+
+        <div class="btnrow" style="margin-top:12px;">
+        <button onclick="loadDlq()">Load DLQ</button>
+        <button onclick="clearDlq()">Clear</button>
         </div>
+
+        <div id="dlqBox" style="margin-top:12px;"></div>
       </div>
 
       <div class="card">
@@ -149,6 +154,60 @@
 
       fetchEvents();
       setInterval(fetchEvents, 5000);
+
+      function clearDlq() {
+        document.getElementById("dlqBox").innerHTML = "";
+    }
+
+        async function loadDlq() {
+        const res = await fetch("/api/dlq/pull");
+        const data = await res.json();
+        const box = document.getElementById("dlqBox");
+        box.innerHTML = "";
+
+        const msgs = data.messages || [];
+        if (msgs.length === 0) {
+            box.innerHTML = `<div class="muted">No DLQ messages.</div>`;
+            return;
+        }
+
+        for (const m of msgs) {
+            const eventId = (m.data && m.data.eventId) ? m.data.eventId : "(no eventId)";
+            const eventType = (m.data && m.data.eventType) ? m.data.eventType : "(no type)";
+            const ackId = m.ackId;
+
+            box.insertAdjacentHTML("beforeend", `
+            <div style="border:1px solid #eee; border-radius:12px; padding:12px; margin-top:10px;">
+                <div><b>eventId:</b> <code>${eventId}</code></div>
+                <div><b>eventType:</b> <code>${eventType}</code></div>
+                <div class="muted" style="margin-top:6px;">messageId: ${m.messageId || ""}</div>
+                <div style="margin-top:10px;" class="btnrow">
+                <button onclick='replayDlq(${JSON.stringify(ackId)}, ${JSON.stringify(m.data)})'>Replay</button>
+                <button onclick='showJson(${JSON.stringify(m.data)})'>View JSON</button>
+                </div>
+            </div>
+            `);
+        }
+        }
+
+        function showJson(obj) {
+        alert(JSON.stringify(obj, null, 2));
+        }
+
+        async function replayDlq(ackId, data) {
+        const res = await fetch("/api/dlq/replay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ackId, data })
+        });
+
+        const out = await res.json().catch(() => ({}));
+        alert(`Replay result: HTTP ${res.status}\n` + JSON.stringify(out, null, 2));
+
+        // refresh DLQ + events
+        setTimeout(loadDlq, 500);
+        setTimeout(fetchEvents, 1000);
+        }
     </script>
   </body>
 </html>

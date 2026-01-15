@@ -2,6 +2,7 @@ import os
 import base64
 import json
 import time
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,6 +13,9 @@ FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
 
 if not PROJECT_ID:
     raise RuntimeError("PROJECT_ID env var is required")
+
+logger = logging.getLogger("worker")
+logging.basicConfig(level=logging.INFO)
 
 db = firestore.Client(project=PROJECT_ID)
 
@@ -56,7 +60,7 @@ async def handle_pubsub(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {e}")
 
-    # TEMPORARY (DLQ demo): force failure for specific eventType
+    # (DLQ demo): force failure for specific eventType
     if event.get("eventType") == "fail":
         raise HTTPException(status_code=500, detail="Intentional failure for DLQ demo")
 
@@ -67,6 +71,12 @@ async def handle_pubsub(request: Request):
     # idempotency check
     doc_ref = db.collection(FIRESTORE_COLLECTION).document(str(event_id))
     if doc_ref.get().exists:
+        logger.info(json.dumps({
+            "service": "worker",
+            "status": "duplicate",
+            "eventId": event_id,
+            "eventType": event.get("eventType"),
+        }))
         return {"ok": True, "storedAs": event_id, "status": "duplicate"}
 
     event["processedAt"] = int(time.time())
@@ -74,8 +84,21 @@ async def handle_pubsub(request: Request):
     try:
         doc_ref.set(event)
     except Exception as e:
+        logger.error(json.dumps({
+            "service": "worker",
+            "status": "firestore_failed",
+            "eventId": event_id,
+            "eventType": event.get("eventType"),
+            "error": str(e),
+        }))
         raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
 
+    logger.info(json.dumps({
+        "service": "worker",
+        "status": "stored",
+        "eventId": event_id,
+        "eventType": event.get("eventType"),
+    }))
     return {"ok": True, "storedAs": event_id}
 
 
