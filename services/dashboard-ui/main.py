@@ -23,7 +23,7 @@ db = firestore.Client(project=PROJECT_ID)
 app = FastAPI(title="CLC3 Dashboard UI", version="1.0.0")
 templates = Jinja2Templates(directory="templates")
 
-# Static files (optional for architecture diagram)
+# static files
 if os.path.isdir("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
