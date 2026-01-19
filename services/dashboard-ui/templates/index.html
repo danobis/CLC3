@@ -38,14 +38,14 @@
       <div class="card" style="max-width: 420px;">
         <h2>Publish Test Event</h2>
 
-        <label>eventType</label>
-        <input id="eventType" value="demo.created" />
+        <label>EventType</label>
+        <input id="eventType" value="demo.created" style="max-width: 400px;" />
 
-        <label>source</label>
-        <input id="source" value="dashboard-ui" />
+        <label>Source</label>
+        <input id="source" value="dashboard-ui" style="max-width: 400px;" />
 
-        <label>payload (JSON)</label>
-        <textarea id="payload" rows="6">{ "hello": "world" }</textarea>
+        <label>Payload (JSON)</label>
+        <textarea id="payload" rows="6" style="max-width: 400px;">{ "hello": "world" }</textarea>
 
         <div class="btnrow" style="margin-top:12px;">
           <button onclick="publish(false)">Send normal</button>
@@ -62,11 +62,11 @@
         <table style="margin-top:12px;">
           <thead>
             <tr>
-              <th>docId / eventId</th>
-              <th>type</th>
-              <th>source</th>
-              <th>timestamps</th>
-              <th>payload</th>
+              <th>DocID / EventID</th>
+              <th>Type</th>
+              <th>Source</th>
+              <th>Timestamps</th>
+              <th>Payload</th>
             </tr>
           </thead>
           <tbody id="eventsBody">
