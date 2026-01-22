@@ -133,6 +133,7 @@ stats (collection)
         ├── ...
         └── 19 (shard document)
             └── count: <int>
+```
 
 This approach distributes write load and allows the system to scale under burst traffic (e.g., Turbo mode).
 
