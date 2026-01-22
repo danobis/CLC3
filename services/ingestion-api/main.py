@@ -1,78 +1,63 @@
-import json
-import logging
 import os
+import json
 import time
 import uuid
 from typing import Any, Dict, Optional
+import time
 
-import google.cloud.logging
-from fastapi import FastAPI, HTTPException
-from google.cloud import pubsub_v1
+from fastapi import FastAPI, HTTPException, JSONResponse
 from pydantic import BaseModel, Field
+from google.cloud import pubsub_v1
 
-# -----------------------------------------------------------------------------
-# Configuration
-# -----------------------------------------------------------------------------
-class ServiceConfig:
-    PROJECT_ID: str = os.getenv("PROJECT_ID")
-    TOPIC_NAME: str = os.getenv("TOPIC_NAME", "events-ingestion")
-    SERVICE_NAME: str = "ingestion-api"
-    VERSION: str = "1.0.0"
+PROJECT_ID = os.getenv("PROJECT_ID")
+TOPIC_NAME = os.getenv("TOPIC_NAME", "events-ingestion")
 
-    @classmethod
-    def validate(cls):
-        if not cls.PROJECT_ID:
-            raise RuntimeError("Environment variable 'PROJECT_ID' is required.")
+if not PROJECT_ID:
+    raise RuntimeError("PROJECT_ID env var is required")
 
-ServiceConfig.validate()
-
-# -----------------------------------------------------------------------------
-# Logging Setup
-# -----------------------------------------------------------------------------
-def setup_logging():
-    client = google.cloud.logging.Client()
-    client.setup_logging()
-    return logging.getLogger(ServiceConfig.SERVICE_NAME)
-
-logger = setup_logging()
-
-# -----------------------------------------------------------------------------
-# Cloud Clients
-# -----------------------------------------------------------------------------
 publisher = pubsub_v1.PublisherClient()
-topic_path = publisher.topic_path(ServiceConfig.PROJECT_ID, ServiceConfig.TOPIC_NAME)
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
-# -----------------------------------------------------------------------------
-# Data Models
-# -----------------------------------------------------------------------------
+app = FastAPI(title="Ingestion Service", version="1.0.0")
+
+
 class EventIn(BaseModel):
     eventType: str = Field(..., min_length=1, max_length=128)
     source: Optional[str] = Field(default=None, max_length=128)
     payload: Dict[str, Any] = Field(default_factory=dict)
-    eventId: Optional[str] = Field(default=None, max_length=128, description="Optional client-provided id")
+    # optional client-provided id; if missing we generate one
+    eventId: Optional[str] = Field(default=None, max_length=128)
 
-# -----------------------------------------------------------------------------
-# App & Routes
-# -----------------------------------------------------------------------------
-app = FastAPI(title="Ingestion Service", version=ServiceConfig.VERSION)
+
+@app.get("/api/stats/minute")
+def api_stats_minute():
+    # current minute bucket
+    bucket_id = time.strftime("%Y%m%d%H%M")
+    # sum all shard docs for that bucket
+    docs = (
+        db.collection("stats")
+        .document("events_per_minute")
+        .collection(bucket_id)
+        .stream()
+    )
+
+    total = 0
+    shards = 0
+    for d in docs:
+        data = d.to_dict() or {}
+        total += int(data.get("count", 0))
+        shards += 1
+
+    return JSONResponse({"bucket": bucket_id, "total": total, "shards_seen": shards})
 
 @app.get("/")
 def root():
-    return {"service": ServiceConfig.SERVICE_NAME, "ok": True}
+    return {"service": "ingestion-api", "ok": True}
 
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}
 
 @app.post("/events", status_code=202)
 def ingest_event(event: EventIn):
     event_id = event.eventId or str(uuid.uuid4())
-
-    logger.info(
-        f"Received ingestion request for eventType: {event.eventType}",
-        extra={"json_fields": {"source": event.source}}
-    )
-
     envelope = {
         "eventId": event_id,
         "eventType": event.eventType,
@@ -91,12 +76,7 @@ def ingest_event(event: EventIn):
             eventId=envelope["eventId"],
         )
         message_id = future.result(timeout=10)
-        logger.info(
-            f"Published message {message_id} to Pub/Sub",
-            extra={"json_fields": {"eventId": event_id}}
-        )
     except Exception as e:
-        logger.error(f"Pub/Sub publish failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Pub/Sub publish failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Pub/Sub publish failed: {e}")
 
     return {"status": "accepted", "eventId": event_id, "pubsubMessageId": message_id}
