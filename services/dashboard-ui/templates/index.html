@@ -34,6 +34,11 @@
       Project: <code>{{ project_id }}</code> • Region: <code>{{ region }}</code> • Firestore: <code>{{ collection }}</code> • Ingestion: <code>{{ ingestion_url }}</code>
     </div>
 
+    <div class="muted" style="margin-top:8px;">
+    <strong>Stats:</strong>
+        Events in current minute: <code id="statsMinute">…</code>
+    </div>
+
     <div class="row" style="margin-top:18px;">
       <div class="card" style="max-width: 420px;">
         <h2>Publish Test Event</h2>
@@ -48,8 +53,8 @@
         <textarea id="payload" rows="6">{ "hello": "world" }</textarea>
 
         <div class="btnrow" style="margin-top:12px;">
-          <button onclick="publish(false)">Send normal</button>
-          <button onclick="publish(true)">Send fail (DLQ demo)</button>
+            <button onclick="publish(false)">Send normal</button>
+            <button onclick="turbo(25)">Turbo x25</button>
         </div>
 
         <div id="publishResult" class="muted" style="margin-top:10px;"></div>
@@ -143,6 +148,58 @@
 
       fetchEvents();
       setInterval(fetchEvents, 5000);
+
+      async function turbo(n) {
+        const source = document.getElementById("source").value.trim() || "dashboard-ui";
+        const payload = document.getElementById("payload").value;
+
+        document.getElementById("publishResult").textContent = `Turbo started: ${n} Events…`;
+
+        const start = Date.now();
+        let ok = 0, fail = 0;
+
+        // send in batches to avoid overwhelming the browser / network
+        const batchSize = 10;
+
+        for (let i = 0; i < n; i += batchSize) {
+            const batch = [];
+
+            for (let j = 0; j < batchSize && (i + j) < n; j++) {
+            batch.push(
+                fetch("/api/publish", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    eventType: "demo.turbo",
+                    source,
+                    payload
+                })
+                })
+                .then(r => { if (r.ok) ok++; else fail++; })
+                .catch(() => { fail++; })
+            );
+            }
+
+            await Promise.all(batch);
+        }
+
+        const ms = Date.now() - start;
+        document.getElementById("publishResult").textContent =
+            `Turbo finished: ok=${ok}, fail=${fail}, time=${ms}ms`;
+
+        setTimeout(fetchEvents, 1000);
+      }
+
+      async function fetchStats() {
+        const res = await fetch("/api/stats/minute");
+        const data = await res.json().catch(() => ({}));
+        const el = document.getElementById("statsMinute");
+        if (!el) return;
+        el.textContent = (data.total !== undefined) ? data.total : "n/a";
+      }
+
+      fetchStats();
+      setInterval(fetchStats, 5000);
     </script>
   </body>
 </html>

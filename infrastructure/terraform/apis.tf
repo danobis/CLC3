@@ -10,3 +10,12 @@ resource "google_project_service" "required_apis" {
 
   disable_on_destroy = false
 }
+
+resource "google_project_service" "cloudscheduler" {
+  project            = var.project_id
+  service            = "cloudscheduler.googleapis.com"
+  disable_on_destroy = false
+}
+
+
+
