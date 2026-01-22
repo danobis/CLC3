@@ -1,30 +1,50 @@
-import os
 import base64
 import json
-import time
+import logging
+import os
 import random
-from google.cloud import firestore
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict
 
+import google.cloud.logging
 from fastapi import FastAPI, HTTPException, Request
 from google.cloud import firestore
 
-PROJECT_ID = os.getenv("PROJECT_ID")
-FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+class ServiceConfig:
+    PROJECT_ID: str = os.getenv("PROJECT_ID")
+    FIRESTORE_COLLECTION: str = os.getenv("FIRESTORE_COLLECTION", "events")
+    SERVICE_NAME: str = "worker"
+    VERSION: str = "1.0.0"
 
-if not PROJECT_ID:
-    raise RuntimeError("PROJECT_ID env var is required")
+    @classmethod
+    def validate(cls):
+        if not cls.PROJECT_ID:
+            raise RuntimeError("Environment variable 'PROJECT_ID' is required.")
 
-db = firestore.Client(project=PROJECT_ID)
+ServiceConfig.validate()
 
-app = FastAPI(title="Worker Service", version="1.0.0")
+# -----------------------------------------------------------------------------
+# Logging Setup
+# -----------------------------------------------------------------------------
+def setup_logging():
+    client = google.cloud.logging.Client()
+    client.setup_logging()
+    return logging.getLogger(ServiceConfig.SERVICE_NAME)
 
+logger = setup_logging()
 
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}
+# -----------------------------------------------------------------------------
+# Cloud Clients
+# -----------------------------------------------------------------------------
+db = firestore.Client(project=ServiceConfig.PROJECT_ID)
 
-def _inc_sharded_counter(db: firestore.Client, bucket_id: str, shards: int = 20) -> None:
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def _inc_sharded_counter(bucket_id: str, shards: int = 20) -> None:
     """
     Increment a sharded counter: stats/events_per_minute/{bucket_id}/shards/{shard}
     This avoids hot-spotting on a single document under high write concurrency.
@@ -37,7 +57,7 @@ def _inc_sharded_counter(db: firestore.Client, bucket_id: str, shards: int = 20)
         .document(str(shard))
     )
     ref.set({"count": firestore.Increment(1)}, merge=True)
-
+    logger.info(f"SHARDED_COUNTER updated bucket={bucket_id} shard={shard}")
 
 def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -63,6 +83,14 @@ def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
     }
     return payload
 
+# -----------------------------------------------------------------------------
+# App & Routes
+# -----------------------------------------------------------------------------
+app = FastAPI(title="Worker Service", version=ServiceConfig.VERSION)
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 @app.post("/pubsub")
 async def handle_pubsub(request: Request):
@@ -70,10 +98,12 @@ async def handle_pubsub(request: Request):
         body = await request.json()
         event = _decode_pubsub_message(body)
     except Exception as e:
+        logger.warning(f"Bad Pub/Sub message: {e}")
         raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {e}")
 
     # TEMPORARY (DLQ demo): force failure for specific eventType
     if event.get("eventType") == "fail":
+        logger.info("Triggering intentional failure for DLQ demo")
         raise HTTPException(status_code=500, detail="Intentional failure for DLQ demo")
 
     event_id = event.get("eventId") or event.get("_pubsub", {}).get("messageId")
@@ -81,31 +111,22 @@ async def handle_pubsub(request: Request):
         raise HTTPException(status_code=400, detail="Missing eventId")
 
     # idempotency check
-    doc_ref = db.collection(FIRESTORE_COLLECTION).document(str(event_id))
+    doc_ref = db.collection(ServiceConfig.FIRESTORE_COLLECTION).document(str(event_id))
     if doc_ref.get().exists:
+        logger.info(f"Duplicate event skipped: {event_id}")
         return {"ok": True, "storedAs": event_id, "status": "duplicate"}
 
     event["processedAt"] = int(time.time())
 
     try:
         doc_ref.set(event)
+        
+        # Update statistics
         bucket_id = time.strftime("%Y%m%d%H%M")
-        shard = random.randint(0, 19)
+        _inc_sharded_counter(bucket_id=bucket_id)
 
-        stats_ref = (
-            db.collection("stats")
-            .document(bucket_id)
-            .collection("shards")
-            .document(str(shard))
-        )
-
-        stats_ref.set(
-            {"count": firestore.Increment(1)},
-            merge=True
-        )
-
-        print(f"SHARDED_COUNTER updated bucket={bucket_id} shard={shard}")
     except Exception as e:
+        logger.error(f"Firestore write failed: {e}")
         raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
 
     return {"ok": True, "storedAs": event_id}
