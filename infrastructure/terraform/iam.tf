@@ -10,6 +10,12 @@ resource "google_service_account" "worker" {
   project      = var.project_id
 }
 
+resource "google_service_account" "dashboard" {
+  account_id   = "dashboard-sa"
+  display_name = "Cloud Run Dashboard Service Account"
+  project      = var.project_id
+}
+
 resource "google_project_iam_member" "ingestion_pubsub_publisher" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
@@ -26,4 +32,10 @@ resource "google_project_iam_member" "worker_firestore_user" {
   project = var.project_id
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_project_iam_member" "dashboard_firestore_viewer" {
+  project = var.project_id
+  role    = "roles/datastore.viewer"
+  member  = "serviceAccount:${google_service_account.dashboard.email}"
 }

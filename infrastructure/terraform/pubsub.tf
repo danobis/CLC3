@@ -22,14 +22,14 @@ resource "google_pubsub_subscription" "events_worker" {
   ack_deadline_seconds = 20
 
   push_config {
-    push_endpoint = "https://worker-863930563168.europe-west3.run.app/pubsub"
+      push_endpoint = "${google_cloud_run_v2_service.worker.uri}/pubsub"
 
-    oidc_token {
-      service_account_email = google_service_account.worker.email
+      oidc_token {
+        service_account_email = google_service_account.worker.email
+      }
     }
-  }
 
-  dead_letter_policy {
+    dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.events_dlq.id
     max_delivery_attempts = 5
   }
