@@ -24,6 +24,7 @@ The following components are provisioned and in active use:
 - Dedicated service accounts with least-privilege permissions
 - Cloud Run ingestion service (public HTTP API)
 - Cloud Run worker service (private, Pub/Sub push target)
+- Cloud Run dashboard UI service (visualization and demo)
 
 The system has been tested end-to-end and is fully functional.
 
@@ -38,10 +39,10 @@ The system has been tested end-to-end and is fully functional.
   Decouples ingestion from processing and delivers events asynchronously.
 
 - **Worker Service (Cloud Run)**  
-  Consumes Pub/Sub push messages, processes events, and persists them in Firestore.
+  Consumes Pub/Sub push messages, processes events, persists them in Firestore, and updates distributed statistics.
 
 - **Storage (Firestore)**  
-  Stores processed event documents, including ingestion and processing metadata.
+  Stores processed event documents and aggregated statistical data using NoSQL patterns.
 
 ---
 
@@ -49,16 +50,19 @@ The system has been tested end-to-end and is fully functional.
 
 A lightweight **Dashboard UI** is deployed as an additional Cloud Run service to visualize and demonstrate the system end-to-end.
 
+<img width="1721" height="695" alt="ui-dashboard" src="https://github.com/user-attachments/assets/6c7bac06-32cc-4c7c-a978-534db6a484ba" />
+
 **Purpose:**
 - Provide a clear, human-readable view of the system state
 - Support live demos without using the GCP Console
-- Make the event-driven architecture tangible
+- Make the event-driven architecture and scalability behavior tangible
 
 **Features:**
 - Displays the latest events stored in Firestore (`events` collection)
 - Shows event metadata (eventId, type, timestamps, payload)
 - Allows publishing test events via the ingestion service
-- Includes a dedicated button to publish a failing event (`eventType="fail"`) to demonstrate retries and dead-letter handling
+- Includes a “Turbo” mode to generate burst traffic
+- Enables inspection of system behavior under load
 - Optionally embeds the architecture diagram for reference
 
 **Architecture role:**
@@ -78,7 +82,7 @@ The following values are considered **fixed** and should not be changed without 
 - **GCP Project:** `clc3-481608`
 - **Region:** `europe-west3`
 - **Firestore:** Native mode, default database
-- **Firestore collection:** `events`
+- **Firestore collections:** `events`, `stats`
 - **Pub/Sub topic:** `events-ingestion`
 - **Pub/Sub subscription:** `events-worker-sub` (push)
 
@@ -95,8 +99,9 @@ The system has been verified end-to-end:
 2. Events are published to Pub/Sub
 3. Worker service receives events asynchronously via push subscription
 4. Processed events are stored in Firestore
+5. Statistical counters are updated using a sharded NoSQL pattern
 
-Firestore documents include:
+Firestore event documents include:
 - Event payload
 - Ingestion timestamp
 - Processing timestamp
@@ -104,28 +109,64 @@ Firestore documents include:
 
 ---
 
+### Scalability: Sharded Counter (NoSQL Design)
+
+To demonstrate **NoSQL scalability and hotspot avoidance**, the worker service implements a **sharded counter** for tracking the number of processed events per minute.
+
+**Motivation:**
+- A single counter document would become a write hotspot under high load
+- Firestore performs best when writes are distributed across multiple documents
+
+**Implementation:**
+- For each processed event, the worker selects a **random shard** (0–19)
+- Only the selected shard document is incremented
+- The total number of events per minute is the **sum of all shard counts**
+
+**Firestore Structure (stats collection):**
+
+```text
+stats (collection)
+└── {YYYYMMDDHHMM} (document: time bucket per minute)
+    └── shards (subcollection)
+        ├── 0 (shard document)
+        │   └── count: <int>
+        ├── 1 (shard document)
+        │   └── count: <int>
+        ├── ...
+        └── 19 (shard document)
+            └── count: <int>
+```
+
+This approach distributes write load and allows the system to scale under burst traffic (e.g., Turbo mode).
+
+---
+
 ### Reliability: Dead-Letter Queue (DLQ)
 
 The worker subscription is configured with a dead-letter topic (`events-dlq`).
-Messages that fail processing repeatedly (max 5 delivery attempts) are automatically routed to the DLQ for inspection and replay.
 
-For demonstration purposes, events with `eventType="fail"` intentionally trigger processing failures to showcase retry and dead-letter handling.
+- Messages that fail processing repeatedly are retried automatically
+- After the maximum number of delivery attempts, messages are routed to the DLQ
+- This mechanism demonstrates fault tolerance and failure isolation in an event-driven system
+
+---
 
 ### Reliability: Idempotent Processing
 
 The worker service implements idempotent processing based on `eventId`.
-If a message is redelivered by Pub/Sub, the worker detects that the event
-was already processed and safely skips duplicate writes.
 
-This ensures correct behavior under retries and at-least-once delivery.
+- Before writing to Firestore, the worker checks whether the event already exists
+- Duplicate deliveries caused by retries are safely ignored
+
+This ensures correct behavior under Pub/Sub’s at-least-once delivery semantics.
 
 ---
 
-### What can be done next
+### Project Type
 
-- Extend event validation or schema enforcement
-- Add monitoring and alerting (Cloud Logging / Metrics)
-- Add authentication to the ingestion endpoint
-- Expand worker logic for additional processing steps
+**Type A – Architectural Design Prototype**
 
-Any further infrastructure changes should be coordinated before implementation.
+- Fully functional serverless system
+- Automated infrastructure provisioning using Terraform
+- Live demonstration via Dashboard UI
+- Focus on scalability, reliability, and NoSQL design principles
