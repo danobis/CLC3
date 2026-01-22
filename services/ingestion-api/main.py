@@ -3,8 +3,9 @@ import json
 import time
 import uuid
 from typing import Any, Dict, Optional
+import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, JSONResponse
 from pydantic import BaseModel, Field
 from google.cloud import pubsub_v1
 
@@ -27,6 +28,27 @@ class EventIn(BaseModel):
     # optional client-provided id; if missing we generate one
     eventId: Optional[str] = Field(default=None, max_length=128)
 
+
+@app.get("/api/stats/minute")
+def api_stats_minute():
+    # current minute bucket
+    bucket_id = time.strftime("%Y%m%d%H%M")
+    # sum all shard docs for that bucket
+    docs = (
+        db.collection("stats")
+        .document("events_per_minute")
+        .collection(bucket_id)
+        .stream()
+    )
+
+    total = 0
+    shards = 0
+    for d in docs:
+        data = d.to_dict() or {}
+        total += int(data.get("count", 0))
+        shards += 1
+
+    return JSONResponse({"bucket": bucket_id, "total": total, "shards_seen": shards})
 
 @app.get("/")
 def root():

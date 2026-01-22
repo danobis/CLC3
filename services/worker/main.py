@@ -2,6 +2,8 @@ import os
 import base64
 import json
 import time
+import random
+from google.cloud import firestore
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,6 +23,20 @@ app = FastAPI(title="Worker Service", version="1.0.0")
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+def _inc_sharded_counter(db: firestore.Client, bucket_id: str, shards: int = 20) -> None:
+    """
+    Increment a sharded counter: stats/events_per_minute/{bucket_id}/shards/{shard}
+    This avoids hot-spotting on a single document under high write concurrency.
+    """
+    shard = random.randint(0, shards - 1)
+    ref = (
+        db.collection("stats")
+        .document("events_per_minute")
+        .collection(bucket_id)
+        .document(str(shard))
+    )
+    ref.set({"count": firestore.Increment(1)}, merge=True)
 
 
 def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,6 +89,22 @@ async def handle_pubsub(request: Request):
 
     try:
         doc_ref.set(event)
+        bucket_id = time.strftime("%Y%m%d%H%M")
+        shard = random.randint(0, 19)
+
+        stats_ref = (
+            db.collection("stats")
+            .document(bucket_id)
+            .collection("shards")
+            .document(str(shard))
+        )
+
+        stats_ref.set(
+            {"count": firestore.Increment(1)},
+            merge=True
+        )
+
+        print(f"SHARDED_COUNTER updated bucket={bucket_id} shard={shard}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
 

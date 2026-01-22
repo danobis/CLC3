@@ -3,6 +3,7 @@ import json
 from typing import Any, Dict, List
 
 import requests
+import time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -76,6 +77,26 @@ def api_events(limit: int = 20):
     events = _fetch_latest_events(limit=limit)
     return JSONResponse({"events": events})
 
+@app.get("/api/stats/minute")
+def api_stats_minute():
+    # current minute bucket
+    bucket_id = time.strftime("%Y%m%d%H%M")
+    # sum all shard docs for that bucket
+    docs = (
+        db.collection("stats")
+        .document("events_per_minute")
+        .collection(bucket_id)
+        .stream()
+    )
+
+    total = 0
+    shards = 0
+    for d in docs:
+        data = d.to_dict() or {}
+        total += int(data.get("count", 0))
+        shards += 1
+
+    return JSONResponse({"bucket": bucket_id, "total": total, "shards_seen": shards})
 
 @app.post("/api/publish")
 async def api_publish(request: Request):
