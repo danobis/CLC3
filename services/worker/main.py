@@ -9,34 +9,45 @@ import google.cloud.logging
 from fastapi import FastAPI, HTTPException, Request
 from google.cloud import firestore
 
-PROJECT_ID = os.getenv("PROJECT_ID")
-FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+class ServiceConfig:
+    PROJECT_ID: str = os.getenv("PROJECT_ID")
+    FIRESTORE_COLLECTION: str = os.getenv("FIRESTORE_COLLECTION", "events")
+    SERVICE_NAME: str = "worker"
+    VERSION: str = "1.0.0"
 
-if not PROJECT_ID:
-    raise RuntimeError("PROJECT_ID env var is required")
+    @classmethod
+    def validate(cls):
+        if not cls.PROJECT_ID:
+            raise RuntimeError("Environment variable 'PROJECT_ID' is required.")
 
-log_client = google.cloud.logging.Client()
-log_client.setup_logging()
+ServiceConfig.validate()
 
-logger = logging.getLogger(__name__)
+# -----------------------------------------------------------------------------
+# Logging Setup
+# -----------------------------------------------------------------------------
+def setup_logging():
+    client = google.cloud.logging.Client()
+    client.setup_logging()
+    return logging.getLogger(ServiceConfig.SERVICE_NAME)
 
-db = firestore.Client(project=PROJECT_ID)
+logger = setup_logging()
 
-app = FastAPI(title="Worker Service", version="1.0.0")
+# -----------------------------------------------------------------------------
+# Cloud Clients
+# -----------------------------------------------------------------------------
+db = firestore.Client(project=ServiceConfig.PROJECT_ID)
 
-
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}
-
-
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
 def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Pub/Sub push delivers:
-    {
-      "message": { "data": "base64...", "attributes": {...}, "messageId": "...", ... },
-      "subscription": "..."
-    }
+    Decodes the Pub/Sub push payload.
+    Expected format:
+    { "message": { "data": "base64...", "attributes": {...}, ... }, ... }
     """
     if "message" not in body or "data" not in body["message"]:
         raise ValueError("Invalid Pub/Sub push payload: missing message.data")
@@ -46,7 +57,7 @@ def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
     data_json = base64.b64decode(data_b64).decode("utf-8")
     payload = json.loads(data_json)
 
-    # include some metadata
+    # Attach metadata
     payload["_pubsub"] = {
         "messageId": msg.get("messageId"),
         "publishTime": msg.get("publishTime"),
@@ -54,6 +65,14 @@ def _decode_pubsub_message(body: Dict[str, Any]) -> Dict[str, Any]:
     }
     return payload
 
+# -----------------------------------------------------------------------------
+# App & Routes
+# -----------------------------------------------------------------------------
+app = FastAPI(title="Worker Service", version=ServiceConfig.VERSION)
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 @app.post("/pubsub")
 async def handle_pubsub(request: Request):
@@ -62,7 +81,7 @@ async def handle_pubsub(request: Request):
         event = _decode_pubsub_message(body)
     except Exception as e:
         logger.error(f"Failed to decode Pub/Sub message: {e}")
-        raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {str(e)}")
 
     # TEMPORARY (DLQ demo): force failure for specific eventType
     if event.get("eventType") == "fail":
@@ -74,8 +93,8 @@ async def handle_pubsub(request: Request):
         logger.error("Event received without eventId")
         raise HTTPException(status_code=400, detail="Missing eventId")
 
-    # idempotency check
-    doc_ref = db.collection(FIRESTORE_COLLECTION).document(str(event_id))
+    # Idempotency check
+    doc_ref = db.collection(ServiceConfig.FIRESTORE_COLLECTION).document(str(event_id))
     if doc_ref.get().exists:
         logger.info(f"Skipping duplicate event: {event_id}")
         return {"ok": True, "storedAs": event_id, "status": "duplicate"}
@@ -87,6 +106,6 @@ async def handle_pubsub(request: Request):
         logger.info(f"Successfully processed and stored event: {event_id}")
     except Exception as e:
         logger.error(f"Firestore write failed for {event_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Firestore write failed: {str(e)}")
 
     return {"ok": True, "storedAs": event_id}
