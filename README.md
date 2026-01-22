@@ -50,6 +50,8 @@ The system has been tested end-to-end and is fully functional.
 
 A lightweight **Dashboard UI** is deployed as an additional Cloud Run service to visualize and demonstrate the system end-to-end.
 
+<img width="1721" height="695" alt="ui-dashboard" src="https://github.com/user-attachments/assets/6c7bac06-32cc-4c7c-a978-534db6a484ba" />
+
 **Purpose:**
 - Provide a clear, human-readable view of the system state
 - Support live demos without using the GCP Console
