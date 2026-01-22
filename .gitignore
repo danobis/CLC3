@@ -5,4 +5,5 @@
 terraform.tfvars
 
 # MacOS
-.DS_Store
+.DS_Store!
+/.venv/

@@ -1,9 +1,11 @@
-import os
 import base64
 import json
+import logging
+import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
+import google.cloud.logging
 from fastapi import FastAPI, HTTPException, Request
 from google.cloud import firestore
 
@@ -12,6 +14,11 @@ FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
 
 if not PROJECT_ID:
     raise RuntimeError("PROJECT_ID env var is required")
+
+log_client = google.cloud.logging.Client()
+log_client.setup_logging()
+
+logger = logging.getLogger(__name__)
 
 db = firestore.Client(project=PROJECT_ID)
 
@@ -54,28 +61,32 @@ async def handle_pubsub(request: Request):
         body = await request.json()
         event = _decode_pubsub_message(body)
     except Exception as e:
+        logger.error(f"Failed to decode Pub/Sub message: {e}")
         raise HTTPException(status_code=400, detail=f"Bad Pub/Sub message: {e}")
 
     # TEMPORARY (DLQ demo): force failure for specific eventType
     if event.get("eventType") == "fail":
+        logger.warning("Simulating failure for eventType='fail' (DLQ Demo)")
         raise HTTPException(status_code=500, detail="Intentional failure for DLQ demo")
 
     event_id = event.get("eventId") or event.get("_pubsub", {}).get("messageId")
     if not event_id:
+        logger.error("Event received without eventId")
         raise HTTPException(status_code=400, detail="Missing eventId")
 
     # idempotency check
     doc_ref = db.collection(FIRESTORE_COLLECTION).document(str(event_id))
     if doc_ref.get().exists:
+        logger.info(f"Skipping duplicate event: {event_id}")
         return {"ok": True, "storedAs": event_id, "status": "duplicate"}
 
     event["processedAt"] = int(time.time())
 
     try:
         doc_ref.set(event)
+        logger.info(f"Successfully processed and stored event: {event_id}")
     except Exception as e:
+        logger.error(f"Firestore write failed for {event_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
 
     return {"ok": True, "storedAs": event_id}
-
-

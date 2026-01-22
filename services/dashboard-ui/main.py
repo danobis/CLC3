@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from typing import Any, Dict, List
 
 import requests
@@ -8,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from google.cloud import firestore
+import google.cloud.logging
 
 PROJECT_ID = os.getenv("PROJECT_ID")
 FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "events")
@@ -17,6 +19,11 @@ if not PROJECT_ID:
     raise RuntimeError("PROJECT_ID env var is required")
 if not INGESTION_URL:
     raise RuntimeError("INGESTION_URL env var is required")
+
+log_client = google.cloud.logging.Client()
+log_client.setup_logging()
+
+logger = logging.getLogger(__name__)
 
 db = firestore.Client(project=PROJECT_ID)
 
@@ -95,11 +102,17 @@ async def api_publish(request: Request):
         else:
             payload = {}
 
-    resp = requests.post(
-        f"{INGESTION_URL.rstrip('/')}/events",
-        json={"eventType": event_type, "source": source, "payload": payload},
-        timeout=10,
-    )
+    try:
+        resp = requests.post(
+            f"{INGESTION_URL.rstrip('/')}/events",
+            json={"eventType": event_type, "source": source, "payload": payload},
+            timeout=10,
+        )
+        if resp.status_code >= 400:
+            logger.warning(f"Ingestion API returned error: {resp.status_code} - {resp.text}")
+    except Exception as e:
+        logger.error(f"Failed to call Ingestion API: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to call upstream: {e}")
 
     # pass through response for debugging
     return JSONResponse(
