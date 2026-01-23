@@ -103,7 +103,7 @@ async def handle_pubsub(request: Request):
 
     # TEMPORARY (DLQ demo): force failure for specific eventType
     if event.get("eventType") == "fail":
-        logger.info("Triggering intentional failure for DLQ demo")
+        logger.warning("Triggering intentional failure for DLQ demo")
         raise HTTPException(status_code=500, detail="Intentional failure for DLQ demo")
 
     event_id = event.get("eventId") or event.get("_pubsub", {}).get("messageId")

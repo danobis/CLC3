@@ -21,7 +21,7 @@ resource "google_cloud_run_v2_service" "ingestion_api" {
       # ERSETZEN: Hier muss die volle Image-URL rein.
       # Wenn du gcloud deploy genutzt hast, schau in die Cloud Console nach der URL.
       # Beispiel: "${var.region}-docker.pkg.dev/${var.project_id}/cloud-run-source-deploy/ingestion-api:latest"
-      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/ingestion-api@sha256:ee9b37a8e37e4dcba886e411fd55e3e1f485e7f813c52a67af19c26575e7e753"
+      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/ingestion-api@sha256:73f671e28e4568fb2fbe4a333a7f4e0a19f3e0a30c168b92e758982afb5b653b"
 
       env {
         name  = "PROJECT_ID"
@@ -56,7 +56,7 @@ resource "google_cloud_run_v2_service" "worker" {
 
     containers {
       # ERSETZEN: Volle Image URL
-      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker@sha256:8093446ebc386972d57469c4f9cd7436330bc0ad0fe8c88975fe562823fb2de6"
+      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker@sha256:ef1086dcf963919364787a3d0bcabf770b6c9d556c44515fdbcc9cb3314c9638"
 
       env {
         name  = "PROJECT_ID"
