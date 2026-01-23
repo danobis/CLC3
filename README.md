@@ -90,6 +90,8 @@ The generator is designed to thoroughly test the infrastructure efficiency:
 - **Connection Pooling:** It reuses TCP connections (Keep-Alive). This forces the Cloud Load Balancer to distribute traffic based on HTTP requests (Layer 7) rather than just connection availability, ensuring a robust test of the ingress capabilities without the overhead of establishing new handshakes for every request.
 - **Sustained Load:** By maintaining a steady stream of concurrent requests (4 worker threads), it challenges the Cloud Run autoscaler to provision instances dynamically based on the request concurrency metric.
 
+<img width="5226" height="2486" alt="Screenshot From 2026-01-23 16-01-46" src="https://github.com/user-attachments/assets/20192d4a-2725-4bff-847c-7f8536bfdb5c" />
+
 ---
 
 ### Shared facts (stable baseline)
