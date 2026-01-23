@@ -76,6 +76,22 @@ The dashboard is intended for demonstration and inspection purposes only and doe
 
 ---
 
+### Load Generator (Traffic Simulation)
+
+A dedicated **Load Generator** service (`services/generator`) is included to simulate realistic production traffic and verify system stability.
+
+**Key Capabilities:**
+- **Synthetic Data:** Generates randomized e-commerce order payloads using `Faker`.
+- **Chaos Injection:** Intentionally sends "fail" event types (approx. 10%) to trigger and verify the Dead-Letter Queue (DLQ) logic.
+- **Parallel Execution:** Uses multi-threading to simulate concurrent clients.
+
+**Impact on Load Balancing:**
+The generator is designed to thoroughly test the infrastructure efficiency:
+- **Connection Pooling:** It reuses TCP connections (Keep-Alive). This forces the Cloud Load Balancer to distribute traffic based on HTTP requests (Layer 7) rather than just connection availability, ensuring a robust test of the ingress capabilities without the overhead of establishing new handshakes for every request.
+- **Sustained Load:** By maintaining a steady stream of concurrent requests (4 worker threads), it challenges the Cloud Run autoscaler to provision instances dynamically based on the request concurrency metric.
+
+---
+
 ### Shared facts (stable baseline)
 
 The following values are considered **fixed** and should not be changed without coordination:
