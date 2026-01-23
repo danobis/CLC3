@@ -126,8 +126,8 @@ To demonstrate **NoSQL scalability and hotspot avoidance**, the worker service i
 
 ```text
 stats (collection)
-└── {YYYYMMDDHHMM} (document: time bucket per minute)
-    └── shards (subcollection)
+└── events_per_minute (document)
+    └── {YYYYMMDDHHMM} (collection: time bucket per minute)
         ├── 0 (shard document)
         │   └── count: <int>
         ├── 1 (shard document)
