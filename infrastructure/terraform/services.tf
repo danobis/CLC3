@@ -21,7 +21,7 @@ resource "google_cloud_run_v2_service" "ingestion_api" {
       # ERSETZEN: Hier muss die volle Image-URL rein.
       # Wenn du gcloud deploy genutzt hast, schau in die Cloud Console nach der URL.
       # Beispiel: "${var.region}-docker.pkg.dev/${var.project_id}/cloud-run-source-deploy/ingestion-api:latest"
-      image = "europe-west3-docker.pkg.dev/clc3-481608/cloud-run-source-deploy/ingestion-api@sha256:bb21f3e8f2a7aa7fb9cd846bcd2221774075dcd6445c540cbf27def1b38d589a"
+      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/ingestion-api@sha256:ee9b37a8e37e4dcba886e411fd55e3e1f485e7f813c52a67af19c26575e7e753"
 
       env {
         name  = "PROJECT_ID"
@@ -56,7 +56,7 @@ resource "google_cloud_run_v2_service" "worker" {
 
     containers {
       # ERSETZEN: Volle Image URL
-      image = "europe-west3-docker.pkg.dev/clc3-481608/cloud-run-source-deploy/worker@sha256:fa3624534bf0c32ff71ef0ddcc9b2bd424a66f26239f6f0ed78aa4f82a5d403d"
+      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker@sha256:8093446ebc386972d57469c4f9cd7436330bc0ad0fe8c88975fe562823fb2de6"
 
       env {
         name  = "PROJECT_ID"
@@ -96,7 +96,7 @@ resource "google_cloud_run_v2_service" "dashboard_ui" {
 
     containers {
       # ERSETZEN: Volle Image URL
-      image = "europe-west3-docker.pkg.dev/clc3-481608/cloud-run-source-deploy/dashboard-ui@sha256:7c969f56a2ccd4e5734fd0b79218875300bf545c1e90235c5d16802f25402f18"
+      image = "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/dashboard-ui@sha256:4d4f5fb991fec7e7404978449045e3f9bfd71690eb837f37047f26f2646cf706"
 
       ports {
         container_port = 8080

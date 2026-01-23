@@ -22,6 +22,12 @@ resource "google_project_iam_member" "ingestion_pubsub_publisher" {
   member  = "serviceAccount:${google_service_account.ingestion.email}"
 }
 
+resource "google_project_iam_member" "ingestion_logging" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.ingestion.email}"
+}
+
 resource "google_project_iam_member" "worker_pubsub_subscriber" {
   project = var.project_id
   role    = "roles/pubsub.subscriber"

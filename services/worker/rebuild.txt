@@ -1,0 +1,6 @@
+gcloud builds submit services/worker \
+  --tag europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker:latest \
+  --project clc3-481608
+
+# Neue Version SHA:
+echo "europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker@$(gcloud artifacts docker images list europe-west3-docker.pkg.dev/clc3-481608/clc3-services/worker --sort-by="~CREATE_TIME" --limit=1 --format="value(DIGEST)")"

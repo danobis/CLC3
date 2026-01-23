@@ -1,4 +1,4 @@
-import json
+import json  # <--- HIER GEÄNDERT
 import logging
 import os
 import time
@@ -6,7 +6,8 @@ import uuid
 from typing import Any, Dict, Optional
 
 import google.cloud.logging
-from fastapi import FastAPI, HTTPException, JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from google.cloud import firestore, pubsub_v1
 from pydantic import BaseModel, Field
 
