@@ -4,6 +4,8 @@ import time
 import uuid
 from typing import Any, Dict
 
+import concurrent.futures
+
 import requests
 from faker import Faker
 
@@ -11,8 +13,8 @@ from faker import Faker
 # Configuration
 # -----------------------------------------------------------------------------
 INGESTION_URL = "https://ingestion-api-57rnnqsynq-ey.a.run.app/events"
-NUM_EVENTS = 100
-DELAY_SECONDS = 0.5
+NUM_EVENTS = 5000
+DELAY_SECONDS = 0.05
 LOCALES = ['de_DE', 'en_US']
 
 # -----------------------------------------------------------------------------
@@ -20,7 +22,7 @@ LOCALES = ['de_DE', 'en_US']
 # -----------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)s] [%(threadName)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 logger = logging.getLogger("LoadGenerator")
@@ -85,9 +87,14 @@ class EventPublisher:
         """
         Sends an event to the API. Returns True on success, False otherwise.
         """
+        # Determine event type (10% chance of 'fail' for DLQ demo)
+        event_type = "order.placed"
+        if random.random() < 0.10:
+            event_type = "fail"
+
         event_envelope = {
             "eventId": str(uuid.uuid4()),
-            "eventType": "order.placed",
+            "eventType": event_type,
             "source": "load-generator-service",
             "payload": payload
         }
@@ -121,20 +128,26 @@ def run_load_test():
     publisher = EventPublisher(INGESTION_URL)
 
     success_count = 0
+    # Use ThreadPoolExecutor for parallel execution (4 workers)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        try:
+            for i in range(NUM_EVENTS):
+                payload = generator.create_order_payload()
+                futures.append(executor.submit(publisher.publish, payload))
+                time.sleep(DELAY_SECONDS)
 
-    try:
-        for i in range(NUM_EVENTS):
-            payload = generator.create_order_payload()
-            if publisher.publish(payload):
-                success_count += 1
+            for future in concurrent.futures.as_completed(futures):
+                if future.result():
+                    success_count += 1
+                    
+        except KeyboardInterrupt:
+            logger.warning("Load test interrupted by user.")
+            for f in futures:
+                f.cancel()
 
-            time.sleep(DELAY_SECONDS)
-
-    except KeyboardInterrupt:
-        logger.warning("Load test interrupted by user.")
-    finally:
-        logger.info("Load test completed.")
-        logger.info(f"Summary: Sent {success_count}/{NUM_EVENTS} events successfully.")
+    logger.info("Load test completed.")
+    logger.info(f"Summary: Sent {success_count}/{NUM_EVENTS} events successfully.")
 
 
 if __name__ == "__main__":
