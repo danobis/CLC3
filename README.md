@@ -181,17 +181,6 @@ This ensures correct behavior under Pub/Sub’s at-least-once delivery semantics
 
 ---
 
-### Project Type
-
-**Type A – Architectural Design Prototype**
-
-- Fully functional serverless system
-- Automated infrastructure provisioning using Terraform
-- Live demonstration via Dashboard UI
-- Focus on scalability, reliability, and NoSQL design principles
-
----
-
 ### Security Architecture
 
 The system implements a **Defense-in-Depth** strategy using GCP IAM and Network Security:
@@ -211,3 +200,12 @@ The system implements a **Defense-in-Depth** strategy using GCP IAM and Network 
   - The Worker service can write to Firestore but cannot serve public web traffic.
 
 ---
+
+### Project Type
+
+**Type A – Architectural Design Prototype**
+
+- Fully functional serverless system
+- Automated infrastructure provisioning using Terraform
+- Live demonstration via Dashboard UI
+- Focus on scalability, reliability, and NoSQL design principles
